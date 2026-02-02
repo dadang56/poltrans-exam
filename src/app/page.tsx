@@ -49,13 +49,15 @@ export default function LoginPage() {
   };
 
   const resolveEmail = (id: string) => {
-    // Simple heuristic for Demo
-    if (id === "2402001") return "mahasiswa@poltrans.com";
-    if (id === "198501012010011001") return "dosen@poltrans.com";
-    if (id === "adminprodi@poltrans.com") return "adminprodi@poltrans.com"; // Explicit
+    // 1. If it's already an email, use it.
+    if (id.includes("@")) return id;
 
-    if (/^\d+$/.test(id)) return `${id}@student.poltrans.ac.id`;
-    return id; // Assume email
+    // 2. Legacy/Hardcoded Helpers (Optional, can be kept for ease)
+    if (id === "2402001") return "mahasiswa@poltrans.com";
+
+    // 3. Default: Treat as Username -> Append System Domain
+    // This matches the logic in AddUserModal which creates users as username@poltrans.com
+    return `${id}@poltrans.com`;
   };
 
   const handleAutoSetup = async (email: string, pass: string) => {
@@ -160,7 +162,7 @@ export default function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-4 border-t pt-4">
               <p className="text-xs text-gray-400 text-center uppercase tracking-wider mb-2">Login Manual</p>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-700 ml-1">Username / NIM</label>
+                <label className="text-xs font-semibold text-gray-700 ml-1">Username</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <User className="h-4 w-4" />
@@ -168,7 +170,7 @@ export default function LoginPage() {
                   <input
                     type="text"
                     className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
-                    placeholder="2402001"
+                    placeholder="Contoh: superadmin"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                   />

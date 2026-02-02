@@ -8,13 +8,15 @@ import * as Dialog from "@radix-ui/react-dialog";
 type UserData = {
     id?: string;
     full_name: string;
-    email: string; // Used as stored username@domain
-    raw_username?: string; // For display/form only
+    username: string; // New: Free text username
+    personal_email?: string; // New: Optional contact email
+    auth_email?: string; // Hidden: username@poltrans.com
     nim_nip: string;
     role: string;
     prodi_id: string;
     password?: string;
     status: string;
+    email?: string; // Legacy/Auth email mapping
 };
 
 interface AddUserModalProps {
@@ -32,8 +34,8 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
 
     const [formData, setFormData] = useState<UserData>({
         full_name: "",
-        email: "",
-        raw_username: "",
+        username: "",
+        personal_email: "",
         nim_nip: "",
         role: "admin_prodi",
         prodi_id: "",
@@ -55,23 +57,25 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
     // Load Data on Edit
     useEffect(() => {
         if (userToEdit) {
-            // Extract username from email if it matches pattern
-            const username = userToEdit.email.includes("@poltrans.ac.id")
-                ? userToEdit.email.split("@")[0]
-                : userToEdit.email;
+            // Try to get username from column OR parse from auth email
+            let initialUsername = userToEdit.username;
+            if (!initialUsername && userToEdit.email) {
+                initialUsername = userToEdit.email.split('@')[0];
+            }
 
             setFormData({
                 ...userToEdit,
-                raw_username: username,
-                password: "", // Ask to reset if needed
+                username: initialUsername || "",
+                personal_email: userToEdit.personal_email || "",
+                password: "",
                 status: userToEdit.status || "active"
             });
         } else {
             // Reset
             setFormData({
                 full_name: "",
-                email: "",
-                raw_username: "",
+                username: "",
+                personal_email: "",
                 nim_nip: "",
                 role: "admin_prodi",
                 prodi_id: "",
@@ -87,58 +91,36 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
         setError(null);
 
         try {
-            // Logic: Construct Email
-            const finalEmail = formData.raw_username?.includes("@")
-                ? formData.raw_username
-                : `${formData.raw_username}@poltrans.ac.id`;
+            // Logic: Construct Auth Email
+            // Remove spaces from username for email safety
+            const cleanUsername = formData.username.trim().replace(/\s+/g, '').toLowerCase();
+            const authEmail = `${cleanUsername}@poltrans.com`;
 
             // Logic: Role & Prodi
-            if (formData.role === 'superadmin') {
-                formData.prodi_id = ""; // Clear prodi for superadmin
-            }
-
-            if (formData.role === 'admin_prodi' && !formData.prodi_id) {
-                // throw new Error("Admin Prodi wajib memilih Program Studi!");
-                // Keep optional if user insists, but good to validate
-            }
+            if (formData.role === 'superadmin') formData.prodi_id = "";
 
             const payload: any = {
                 full_name: formData.full_name,
-                email: finalEmail,
+                email: authEmail, // Auth Email (Required by DB Constraint)
+                username: formData.username, // Save Real Username
+                personal_email: formData.personal_email || null, // Optional
                 role: formData.role,
                 nim_nip: formData.nim_nip,
-                prodi_id: formData.prodi_id || null, // Ensure NULL if empty
+                prodi_id: formData.prodi_id || null,
                 status: formData.status
             };
 
             let resultError;
 
             if (userToEdit?.id) {
-                // UPDATE (Profile Only)
-                // Password update is NOT handled here for Supabase Auth (Complex).
-                // We only update Profile metadata.
+                // UPDATE
                 const { error } = await supabase
                     .from('users')
                     .update(payload)
                     .eq('id', userToEdit.id);
                 resultError = error;
             } else {
-                // INSERT (Profile Only)
-                // We rely on "Auto Setup" on Login page to create Auth User using this Email + Password.
-                // We must store the password somewhere? NO. Security risk.
-                // The "Auto Setup" uses the password input by user AT LOGIN.
-                // So setting password here is mainly for the Admin's record or if we had Admin API.
-                // WAIT. If "Auto Setup" creates account, it uses the password THE USER TYPES AT LOGIN.
-                // So the password field here is effectively USELESS unless we have Admin API or save it temporarily?
-                // OR, if User expects to Login immediately with THIS PASSWORD, we need Admin API.
-                // Current Solution: We INSERT to users. User tries to login. Auto link happens.
-                // BUT User needs to know what password to use.
-                // If I let admin set "123456", and User logs in with "123456".
-                // AutoSetup creates AuthUser with "123456". Success.
-                // SO: Valid flow.
-
-                // We DON'T save password to DB. We just pretend we set it.
-                // The actual setting happens when user logs in first time.
+                // INSERT
                 const { error } = await supabase.from('users').insert(payload);
                 resultError = error;
             }
@@ -147,11 +129,6 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
 
             onOpenChange(false);
             onSuccess();
-
-            // Alert for awareness
-            if (!userToEdit) {
-                // alert(`User dibuat! Login dengan Username: ${formData.raw_username} (Password: ${formData.password})`);
-            }
 
         } catch (err: any) {
             setError(err.message);
@@ -202,12 +179,12 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
                                 <input
                                     type="text"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-gray-50"
-                                    value={formData.raw_username}
-                                    onChange={e => setFormData({ ...formData, raw_username: e.target.value })}
+                                    value={formData.username}
+                                    onChange={e => setFormData({ ...formData, username: e.target.value })}
                                     required
-                                    placeholder="username"
+                                    placeholder="Input Username Login"
                                 />
-                                <p className="text-[10px] text-gray-500 mt-1">Sistem akan login sebagai: username@poltrans.ac.id</p>
+                                <p className="text-[10px] text-gray-500 mt-1">Digunakan untuk Login</p>
                             </div>
 
                             {/* NIP */}
@@ -217,9 +194,21 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     value={formData.nim_nip}
                                     onChange={e => setFormData({ ...formData, nim_nip: e.target.value })}
-                                    placeholder="Nomor Induk Pegawai"
+                                    placeholder="NIP"
                                 />
                             </div>
+                        </div>
+
+                        {/* Email (Optional) */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-gray-400 font-normal">(Opsional)</span></label>
+                            <input
+                                type="email"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+                                value={formData.personal_email}
+                                onChange={e => setFormData({ ...formData, personal_email: e.target.value })}
+                                placeholder="nama@email.com"
+                            />
                         </div>
 
                         {/* Role & Status */}
@@ -231,13 +220,11 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
                                     value={formData.role}
                                     onChange={e => setFormData({ ...formData, role: e.target.value })}
                                 >
-                                    {/* Restricted Roles */}
                                     <option value="admin_prodi">Admin Prodi</option>
                                     <option value="superadmin">Superadmin</option>
                                     <option value="dosen">Dosen</option>
                                     <option value="pengawas">Pengawas</option>
-                                    <option value="mahasiswa" className="md:hidden">Mahasiswa</option>
-                                    {/* Hidden/Low priority if requested only Super/AdminProdi. Kept for flexibility */}
+                                    <option value="mahasiswa">Mahasiswa</option>
                                 </select>
                             </div>
                             <div>
@@ -269,7 +256,6 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
                                         </option>
                                     ))}
                                 </select>
-                                <p className="text-[10px] text-gray-500 mt-1">Wajib dipilih untuk Admin Prodi</p>
                             </div>
                         )}
 
@@ -283,7 +269,7 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
                                     value={formData.password}
                                     onChange={e => setFormData({ ...formData, password: e.target.value })}
                                     placeholder={userToEdit ? "Isi jika ingin mengubah password" : "Minimal 6 karakter"}
-                                    required={!userToEdit} // Required for new users
+                                    required={!userToEdit}
                                 />
                                 <button
                                     type="button"

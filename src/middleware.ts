@@ -40,7 +40,17 @@ export async function middleware(request: NextRequest) {
             .eq('id', user.id)
             .single();
 
-        const role = userData?.role || 'mahasiswa'; // Default safe fallback
+        if (!userData) {
+            // Profile not found for this Auth User.
+            // This is a critical error (Sync issue). redirect to login with error.
+            await supabase.auth.signOut();
+            const url = request.nextUrl.clone();
+            url.pathname = '/';
+            url.searchParams.set('error', 'ProfileNotFound');
+            return NextResponse.redirect(url);
+        }
+
+        const role = userData.role;
 
         // Role-based redirects protection
         // If accessing a path that starts with a role namespace, check if it matches.

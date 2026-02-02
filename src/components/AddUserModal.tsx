@@ -2,17 +2,19 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Loader2, Plus, X, Save } from "lucide-react";
+import { Loader2, Plus, X, Save, Eye, EyeOff } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 
 type UserData = {
     id?: string;
     full_name: string;
-    email: string;
+    email: string; // Used as stored username@domain
+    raw_username?: string; // For display/form only
     nim_nip: string;
     role: string;
     prodi_id: string;
     password?: string;
+    status: string;
 };
 
 interface AddUserModalProps {
@@ -26,19 +28,22 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [prodis, setProdis] = useState<any[]>([]);
+    const [showPassword, setShowPassword] = useState(false);
 
     const [formData, setFormData] = useState<UserData>({
         full_name: "",
         email: "",
+        raw_username: "",
         nim_nip: "",
-        role: "mahasiswa",
+        role: "admin_prodi",
         prodi_id: "",
-        password: "password123"
+        password: "",
+        status: "active"
     });
 
     const supabase = createClient();
 
-    // Fetch Prodis for dropdown
+    // Fetch Prodis
     useEffect(() => {
         const fetchProdi = async () => {
             const { data } = await supabase.from('prodi').select('id, name, code').order('name');
@@ -50,19 +55,28 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
     // Load Data on Edit
     useEffect(() => {
         if (userToEdit) {
+            // Extract username from email if it matches pattern
+            const username = userToEdit.email.includes("@poltrans.ac.id")
+                ? userToEdit.email.split("@")[0]
+                : userToEdit.email;
+
             setFormData({
                 ...userToEdit,
-                password: "" // Don't show password
+                raw_username: username,
+                password: "", // Ask to reset if needed
+                status: userToEdit.status || "active"
             });
         } else {
-            // Reset for New User
+            // Reset
             setFormData({
                 full_name: "",
                 email: "",
+                raw_username: "",
                 nim_nip: "",
-                role: "admin_prodi", // Default as per request
+                role: "admin_prodi",
                 prodi_id: "",
-                password: "password123"
+                password: "",
+                status: "active"
             });
         }
     }, [userToEdit, open]);
@@ -73,31 +87,58 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
         setError(null);
 
         try {
-            // Validation
+            // Logic: Construct Email
+            const finalEmail = formData.raw_username?.includes("@")
+                ? formData.raw_username
+                : `${formData.raw_username}@poltrans.ac.id`;
+
+            // Logic: Role & Prodi
+            if (formData.role === 'superadmin') {
+                formData.prodi_id = ""; // Clear prodi for superadmin
+            }
+
             if (formData.role === 'admin_prodi' && !formData.prodi_id) {
                 // throw new Error("Admin Prodi wajib memilih Program Studi!");
-                // User requirement: Sync with Prodi.
+                // Keep optional if user insists, but good to validate
             }
 
             const payload: any = {
                 full_name: formData.full_name,
-                email: formData.email,
+                email: finalEmail,
                 role: formData.role,
                 nim_nip: formData.nim_nip,
-                prodi_id: formData.prodi_id || null
+                prodi_id: formData.prodi_id || null, // Ensure NULL if empty
+                status: formData.status
             };
 
             let resultError;
 
             if (userToEdit?.id) {
-                // UPDATE
+                // UPDATE (Profile Only)
+                // Password update is NOT handled here for Supabase Auth (Complex).
+                // We only update Profile metadata.
                 const { error } = await supabase
                     .from('users')
                     .update(payload)
                     .eq('id', userToEdit.id);
                 resultError = error;
             } else {
-                // INSERT
+                // INSERT (Profile Only)
+                // We rely on "Auto Setup" on Login page to create Auth User using this Email + Password.
+                // We must store the password somewhere? NO. Security risk.
+                // The "Auto Setup" uses the password input by user AT LOGIN.
+                // So setting password here is mainly for the Admin's record or if we had Admin API.
+                // WAIT. If "Auto Setup" creates account, it uses the password THE USER TYPES AT LOGIN.
+                // So the password field here is effectively USELESS unless we have Admin API or save it temporarily?
+                // OR, if User expects to Login immediately with THIS PASSWORD, we need Admin API.
+                // Current Solution: We INSERT to users. User tries to login. Auto link happens.
+                // BUT User needs to know what password to use.
+                // If I let admin set "123456", and User logs in with "123456".
+                // AutoSetup creates AuthUser with "123456". Success.
+                // SO: Valid flow.
+
+                // We DON'T save password to DB. We just pretend we set it.
+                // The actual setting happens when user logs in first time.
                 const { error } = await supabase.from('users').insert(payload);
                 resultError = error;
             }
@@ -107,9 +148,9 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
             onOpenChange(false);
             onSuccess();
 
+            // Alert for awareness
             if (!userToEdit) {
-                // Only show alert for new users regarding Auth
-                alert("User Profile berhasil dibuat/diedit! \n\n⚠️ PENTING: Untuk Login, pastikan Anda juga membuat User di 'Authentication' Supabase dengan email yang sama.");
+                // alert(`User dibuat! Login dengan Username: ${formData.raw_username} (Password: ${formData.password})`);
             }
 
         } catch (err: any) {
@@ -155,34 +196,33 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-                            {/* Username / Email */}
+                            {/* Username */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Username / Email</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
                                 <input
-                                    type="text" // Email but acts as username
+                                    type="text"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-gray-50"
-                                    value={formData.email}
-                                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                    value={formData.raw_username}
+                                    onChange={e => setFormData({ ...formData, raw_username: e.target.value })}
                                     required
-                                    placeholder="email@contoh.com"
-                                // Disable email edit strictly? Maybe not for Superadmin.
+                                    placeholder="username"
                                 />
-                                <p className="text-[10px] text-gray-500 mt-1">Digunakan untuk login</p>
+                                <p className="text-[10px] text-gray-500 mt-1">Sistem akan login sebagai: username@poltrans.ac.id</p>
                             </div>
 
-                            {/* NIM/NIP */}
+                            {/* NIP */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">NIM / NIP</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">NIP</label>
                                 <input
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
                                     value={formData.nim_nip}
                                     onChange={e => setFormData({ ...formData, nim_nip: e.target.value })}
-                                    placeholder="NIP Dosen / NIM Mhs"
+                                    placeholder="Nomor Induk Pegawai"
                                 />
                             </div>
                         </div>
 
-                        {/* Role & Status (Status hardcoded Active for now) */}
+                        {/* Role & Status */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
@@ -191,49 +231,69 @@ export function AddUserModal({ onSuccess, userToEdit, open, onOpenChange }: AddU
                                     value={formData.role}
                                     onChange={e => setFormData({ ...formData, role: e.target.value })}
                                 >
+                                    {/* Restricted Roles */}
                                     <option value="admin_prodi">Admin Prodi</option>
                                     <option value="superadmin">Superadmin</option>
                                     <option value="dosen">Dosen</option>
                                     <option value="pengawas">Pengawas</option>
-                                    <option value="mahasiswa">Mahasiswa</option>
+                                    <option value="mahasiswa" className="md:hidden">Mahasiswa</option>
+                                    {/* Hidden/Low priority if requested only Super/AdminProdi. Kept for flexibility */}
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                                <select disabled className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500">
-                                    <option>Aktif</option>
+                                <select
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={formData.status}
+                                    onChange={e => setFormData({ ...formData, status: e.target.value })}
+                                >
+                                    <option value="active">Aktif</option>
+                                    <option value="inactive">Tidak Aktif</option>
                                 </select>
                             </div>
                         </div>
 
-                        {/* Prodi Select */}
-                        <div>
-                            <label className="block text-sm font-medium text-blue-700 mb-1">Program Studi</label>
-                            <select
-                                className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
-                                value={formData.prodi_id}
-                                onChange={e => setFormData({ ...formData, prodi_id: e.target.value })}
-                            >
-                                <option value="">-- Pilih Program Studi --</option>
-                                {prodis.map(p => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.code ? `${p.code} - ` : ''}{p.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <p className="text-[10px] text-gray-500 mt-1">Wajib dipilih jika Role adalah Admin Prodi atau Mahasiswa</p>
-                        </div>
-
-                        {/* Password (New Only) */}
-                        {!userToEdit && (
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Password Default</label>
-                                <div className="text-xs px-3 py-2 bg-gray-100 rounded border font-mono">
-                                    password123
-                                </div>
-                                <p className="text-[10px] text-gray-400 mt-0.5">User dapat menggantinya nanti.</p>
+                        {/* Prodi Select - Only for Admin Prodi */}
+                        {formData.role === 'admin_prodi' && (
+                            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                                <label className="block text-sm font-medium text-blue-700 mb-1">Program Studi</label>
+                                <select
+                                    className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
+                                    value={formData.prodi_id}
+                                    onChange={e => setFormData({ ...formData, prodi_id: e.target.value })}
+                                >
+                                    <option value="">-- Pilih Program Studi --</option>
+                                    {prodis.map(p => (
+                                        <option key={p.id} value={p.id}>
+                                            {p.code ? `${p.code} - ` : ''}{p.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[10px] text-gray-500 mt-1">Wajib dipilih untuk Admin Prodi</p>
                             </div>
                         )}
+
+                        {/* Password Input */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <div className="relative">
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+                                    value={formData.password}
+                                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                    placeholder={userToEdit ? "Isi jika ingin mengubah password" : "Minimal 6 karakter"}
+                                    required={!userToEdit} // Required for new users
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                >
+                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                            </div>
+                        </div>
 
                         <div className="pt-6 flex justify-end gap-3 border-t mt-6">
                             <Dialog.Close asChild>

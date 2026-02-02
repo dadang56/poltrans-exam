@@ -74,17 +74,27 @@ export default function UserManagementPage() {
     const confirmDelete = async () => {
         if (!deletingId) return;
         setIsDeleting(true);
-        // Beware: Deleting user here does NOT delete Auth User automatically unless Edge Function triggers it.
-        // It only deletes the Profile.
-        const { error } = await supabase.from('users').delete().eq('id', deletingId);
 
-        if (error) {
-            alert("Gagal menghapus user: " + error.message);
-        } else {
+        try {
+            // Using API to delete Auth User AND Profile
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: deletingId })
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Gagal menghapus');
+            }
+
             setDeletingId(null);
             fetchUsers();
+        } catch (error: any) {
+            alert("Gagal: " + error.message);
+        } finally {
+            setIsDeleting(false);
         }
-        setIsDeleting(false);
     };
 
     return (
@@ -158,7 +168,7 @@ export default function UserManagementPage() {
                         <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-semibold">
                             <tr>
                                 <th className="px-4 py-3 rounded-tl-lg">Nama</th>
-                                <th className="px-4 py-3">Email/Username</th>
+                                <th className="px-4 py-3">Username / Email</th>
                                 <th className="px-4 py-3">NIM/NIP</th>
                                 <th className="px-4 py-3">Prodi</th>
                                 <th className="px-4 py-3">Role</th>
@@ -188,7 +198,12 @@ export default function UserManagementPage() {
                                             </div>
                                             {user.full_name}
                                         </td>
-                                        <td className="px-4 py-3 text-gray-500">{user.email || '-'}</td>
+                                        <td className="px-4 py-3 text-gray-500">
+                                            <div className="flex flex-col">
+                                                <span className="text-gray-900 font-medium">{user.username || '-'}</span>
+                                                <span className="text-xs text-gray-400">{user.personal_email || '-'}</span>
+                                            </div>
+                                        </td>
                                         <td className="px-4 py-3 text-gray-500 font-mono text-xs">{user.nim_nip || '-'}</td>
                                         <td className="px-4 py-3 text-gray-500">
                                             {user.prodi ? (
@@ -202,9 +217,9 @@ export default function UserManagementPage() {
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${user.role === 'mahasiswa' ? 'bg-green-50 text-green-700 border border-green-100' :
-                                                    user.role === 'dosen' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
-                                                        user.role === 'admin_prodi' ? 'bg-orange-50 text-orange-700 border border-orange-100' :
-                                                            'bg-gray-100 text-gray-700 border border-gray-200'
+                                                user.role === 'dosen' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
+                                                    user.role === 'admin_prodi' ? 'bg-orange-50 text-orange-700 border border-orange-100' :
+                                                        'bg-gray-100 text-gray-700 border border-gray-200'
                                                 }`}>
                                                 {user.role}
                                             </span>
@@ -254,8 +269,7 @@ export default function UserManagementPage() {
                             <div>
                                 <h3 className="text-lg font-bold text-gray-900">Hapus User?</h3>
                                 <p className="text-sm text-gray-500 mt-2">
-                                    Data user akan dihapus permanen dari Database Profile.
-                                    <br /><span className="text-xs text-red-500">(Note: Login Auth mungkin perlu dihapus manual di Dashboard Supabase).</span>
+                                    Data user akan dihapus permanen, termasuk akun Login-nya.
                                 </p>
                             </div>
                             <div className="flex gap-3 pt-2">
@@ -271,7 +285,7 @@ export default function UserManagementPage() {
                                     className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition shadow-sm disabled:opacity-70 flex items-center justify-center gap-2"
                                 >
                                     {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
-                                    Hapus
+                                    Hapus Permanen
                                 </button>
                             </div>
                         </div>

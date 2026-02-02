@@ -11,7 +11,8 @@ import {
     X,
     Save,
     Loader2,
-    BookOpen
+    BookOpen,
+    AlertTriangle
 } from "lucide-react";
 
 export default function ProdiPage() {
@@ -25,6 +26,10 @@ export default function ProdiPage() {
     const [formData, setFormData] = useState({ code: "", name: "" });
     const [editingId, setEditingId] = useState<string | null>(null);
 
+    // Delete State
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
     const supabase = createClient();
 
     // Fetch Data
@@ -37,7 +42,7 @@ export default function ProdiPage() {
 
         if (error) {
             console.error("Error fetching prodi:", error);
-            alert("Gagal memuat data: " + error.message);
+            // Don't alert on initial load, just log
         } else {
             setProdis(data || []);
         }
@@ -62,7 +67,7 @@ export default function ProdiPage() {
         setIsModalOpen(true);
     };
 
-    // Handle Submit
+    // Handle Submit (Add/Edit)
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.code || !formData.name) return;
@@ -96,11 +101,18 @@ export default function ProdiPage() {
         setIsSubmitting(false);
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm("Yakin ingin menghapus Prodi ini? Data terkait (User/Mata Kuliah) mungkin ikut terhapus.")) return;
-        const { error } = await supabase.from("prodi").delete().eq("id", id);
-        if (error) alert("Gagal menghapus: " + error.message);
-        else fetchProdis();
+    // Handle Delete Confirmation
+    const confirmDelete = async () => {
+        if (!deletingId) return;
+        setIsDeleting(true);
+        const { error } = await supabase.from("prodi").delete().eq("id", deletingId);
+        if (error) {
+            alert("Gagal menghapus: " + error.message);
+        } else {
+            fetchProdis();
+            setDeletingId(null);
+        }
+        setIsDeleting(false);
     };
 
     // Filter
@@ -206,7 +218,7 @@ export default function ProdiPage() {
                                                     <Pencil className="h-4 w-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(prodi.id)}
+                                                    onClick={() => setDeletingId(prodi.id)}
                                                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
@@ -280,6 +292,42 @@ export default function ProdiPage() {
                     </div>
                 </div>
             )}
+
+            {/* Modal Konfirmasi Hapus */}
+            {deletingId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 text-center space-y-4">
+                            <div className="mx-auto w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center">
+                                <AlertTriangle className="h-6 w-6" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900">Hapus Program Studi?</h3>
+                                <p className="text-sm text-gray-500 mt-2">
+                                    Data yang dihapus tidak bisa dikembalikan. Data terkait (User/Mata Kuliah) mungkin ikut hilang.
+                                </p>
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={() => setDeletingId(null)}
+                                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    disabled={isDeleting}
+                                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition shadow-sm disabled:opacity-70 flex items-center justify-center gap-2"
+                                >
+                                    {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    Hapus
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

@@ -15,6 +15,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     initialize: async () => {
         const supabase = createClient();
         try {
+
+
             const { data: { user: authUser } } = await supabase.auth.getUser();
 
             if (authUser) {
@@ -48,6 +50,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     logout: async () => {
         const supabase = createClient();
         await supabase.auth.signOut();
+
         set({ user: null });
         window.location.href = '/'; // Hard redirect to login
     },

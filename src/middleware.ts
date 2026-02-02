@@ -9,6 +9,8 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next();
     }
 
+
+
     // 1. Update session (refresh tokens)
     const { supabaseResponse, user, supabase } = await updateSession(request);
 

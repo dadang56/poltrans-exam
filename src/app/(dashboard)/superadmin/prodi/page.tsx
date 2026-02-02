@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import {
-    LayoutDashboard,
     Plus,
     Search,
     RefreshCw,
@@ -24,6 +23,7 @@ export default function ProdiPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formData, setFormData] = useState({ code: "", name: "" });
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     const supabase = createClient();
 
@@ -35,8 +35,12 @@ export default function ProdiPage() {
             .select("*")
             .order("name", { ascending: true });
 
-        if (error) console.error("Error fetching prodi:", error);
-        else setProdis(data || []);
+        if (error) {
+            console.error("Error fetching prodi:", error);
+            alert("Gagal memuat data: " + error.message);
+        } else {
+            setProdis(data || []);
+        }
         setLoading(false);
     };
 
@@ -44,31 +48,56 @@ export default function ProdiPage() {
         fetchProdis();
     }, []);
 
+    // Handle Edit Click
+    const handleEdit = (prodi: any) => {
+        setEditingId(prodi.id);
+        setFormData({ code: prodi.code || "", name: prodi.name });
+        setIsModalOpen(true);
+    };
+
+    // Handle Add Click
+    const handleAdd = () => {
+        setEditingId(null);
+        setFormData({ code: "", name: "" });
+        setIsModalOpen(true);
+    };
+
     // Handle Submit
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.code || !formData.name) return;
 
         setIsSubmitting(true);
+        let error;
 
-        // Insert
-        const { error } = await supabase.from("prodi").insert([{
-            code: formData.code,
-            name: formData.name
-        }]);
+        if (editingId) {
+            // UPDATE
+            const { error: updateError } = await supabase
+                .from("prodi")
+                .update({ code: formData.code, name: formData.name })
+                .eq("id", editingId);
+            error = updateError;
+        } else {
+            // INSERT
+            const { error: insertError } = await supabase
+                .from("prodi")
+                .insert([{ code: formData.code, name: formData.name }]);
+            error = insertError;
+        }
 
         if (error) {
             alert("Gagal menyimpan: " + error.message);
         } else {
             setIsModalOpen(false);
             setFormData({ code: "", name: "" });
+            setEditingId(null);
             fetchProdis();
         }
         setIsSubmitting(false);
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Yakin ingin menghapus Prodi ini?")) return;
+        if (!confirm("Yakin ingin menghapus Prodi ini? Data terkait (User/Mata Kuliah) mungkin ikut terhapus.")) return;
         const { error } = await supabase.from("prodi").delete().eq("id", id);
         if (error) alert("Gagal menghapus: " + error.message);
         else fetchProdis();
@@ -104,7 +133,7 @@ export default function ProdiPage() {
                         <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
                     </button>
                     <button
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={handleAdd}
                         className="flex items-center gap-2 bg-blue-900 text-white px-4 py-2 rounded-lg hover:bg-blue-800 transition shadow-sm text-sm font-medium"
                     >
                         <Plus className="h-4 w-4" /> Tambah Prodi
@@ -170,7 +199,10 @@ export default function ProdiPage() {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition">
-                                                <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition">
+                                                <button
+                                                    onClick={() => handleEdit(prodi)}
+                                                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                                                >
                                                     <Pencil className="h-4 w-4" />
                                                 </button>
                                                 <button
@@ -189,12 +221,14 @@ export default function ProdiPage() {
                 </div>
             </div>
 
-            {/* Modal Tambah */}
+            {/* Modal Tambah/Edit */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                            <h3 className="font-bold text-gray-900">Tambah Program Studi</h3>
+                            <h3 className="font-bold text-gray-900">
+                                {editingId ? "Edit Program Studi" : "Tambah Program Studi"}
+                            </h3>
                             <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                                 <X className="h-5 w-5" />
                             </button>
